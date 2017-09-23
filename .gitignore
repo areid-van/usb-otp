@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+avr-otp
+avr-otp.hex
+eeprom.hex
