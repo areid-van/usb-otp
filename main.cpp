@@ -19,89 +19,51 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 */
-#include "sha1.h"
+#include "hmac_sha1.h"
 #include <avr/eeprom.h>
 #include <util/delay.h>
-#include <avr/pgmspace.h>
 
 
-const PROGMEM uint8_t ipad = '\x36';
-const PROGMEM uint8_t opad = '\x5c';
-
-int main(void)
+void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 {
-    SHA1 sha1;
+    HMAC_SHA1 hmac(secret, length);
+    hmac.update(time, 8);
 
-    {
-    uint8_t m[10];
-    m[0] = 0x48;
-    m[1] = 0x65;
-    m[2] = 0x6c;
-    m[3] = 0x6c;
-    m[4] = 0x6f;
-    m[5] = 0x21;
-    m[6] = 0xde;
-    m[7] = 0xad;
-    m[8] = 0xbe;
-    m[9] = 0xef;
+    uint8_t digest[20];
+    hmac.digest(secret, length, digest);
 
-    for(uint8_t i=0; i<10; i++) m[i] ^= ipad;
-    sha1.update(m, 10);
-    m[0] = ipad;
-    for(uint8_t i=0; i<54; i++) sha1.update(m, 1);
-
-    m[0] = 0;
-    m[1] = 0;
-    m[2] = 0;
-    m[3] = 0;
-    m[4] = 2;
-    m[5] = 0xfd;
-    m[6] = 0xfa;
-    m[7] = 0xd3;
-    sha1.update(m, 8);
-    }
-
-    uint8_t d[20];
-    sha1.digest(d);
-    sha1.reset();
-
-    {
-    uint8_t m[10];
-    m[0] = 0x48;
-    m[1] = 0x65;
-    m[2] = 0x6c;
-    m[3] = 0x6c;
-    m[4] = 0x6f;
-    m[5] = 0x21;
-    m[6] = 0xde;
-    m[7] = 0xad;
-    m[8] = 0xbe;
-    m[9] = 0xef;
-
-    for(uint8_t i=0; i<10; i++) m[i] ^= opad;
-    sha1.update(m, 10);
-    m[0] = opad;
-    for(uint8_t i=0; i<54; i++) sha1.update(m, 1);
-    }
-
-    sha1.update(d, 20);
-    sha1.digest(d);
-
-    uint8_t o = d[19] & 0x0f;
+    uint8_t o = digest[19] & 0x0f;
     
     uint32_t p = 0;
     for(uint8_t i=0; i<4; i++){
-        uint32_t x = d[o+i];
+        uint32_t x = digest[o+i];
         p |= x << (3-i)*8;
     } 
     p = p % 1000000ul;
 
     for(uint8_t i=0; i<6; i++){
-        d[5-i] = (p%10ul) + 48ul;
+        password[5-i] = (p%10ul) + 48ul;
         p /= 10ul;
     }
-    eeprom_write_block((uint8_t*)d, (uint8_t*)0, 6);
+}
 
+void getPassword(void)
+{
+
+    uint8_t secret[10];
+    eeprom_read_block(secret, (uint8_t*)0, 10);
+
+    uint8_t time[8];
+    eeprom_read_block(time, (uint8_t*)0 + 16, 8);
+
+    uint8_t password[6];
+    otp(password, secret, 10, time);
+    eeprom_write_block(password, (uint8_t*)0 + 32, 6);
+}
+
+int main(void)
+{
+    getPassword();
     while(1) _delay_ms(1000);
     return 0;
 }
