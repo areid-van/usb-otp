@@ -22,7 +22,16 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "hmac_sha1.h"
 #include <avr/eeprom.h>
 #include <util/delay.h>
+#include <avr/wdt.h>
+#include <avr/interrupt.h>
 
+extern "C" {
+    #include "usbdrv/usbdrv.h"
+}
+
+
+
+static uint8_t report_out [3];
 
 void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 {
@@ -61,9 +70,109 @@ void getPassword(void)
     eeprom_write_block(password, (uint8_t*)0 + 32, 6);
 }
 
+PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = {
+    '\x05', '\x01',     //USAGE_PAGE (Generic Desktop)
+    '\x09', '\x05',     //USAGE (Game Pad)
+    '\xa1', '\x01',     //COLLECTION (Application)
+    '\xa1', '\x00',     //  COLLECTION (Physical)
+    '\x05', '\x09',     //    USAGE_PAGE (Button)
+    '\x19', '\x01',     //    USAGE_MINIMUM (Button 1)
+    '\x29', '\x08',     //    USAGE_MAXIMUM (Button 8)
+    '\x15', '\x00',     //    LOGICAL_MINIMUM (0)
+    '\x25', '\x01',     //    LOGICAL_MAXIMUM (1)
+    '\x95', '\x08',     //    REPORT_COUNT (8)
+    '\x75', '\x01',     //    REPORT_SIZE (1)
+    '\x81', '\x02',     //    INPUT (Data,Var,Abs)
+    '\x05', '\x01',     //    USAGE_PAGE (Generic Desktop)
+    '\x09', '\x30',     //    USAGE (X)
+    '\x09', '\x31',     //    USAGE (Y)
+    '\x15', '\x81',     //    LOGICAL_MINIMUM (-127)
+    '\x25', '\x7f',     //    LOGICAL_MAXIMUM (127)
+    '\x75', '\x08',     //    REPORT_SIZE (8)
+    '\x95', '\x02',     //    REPORT_COUNT (2)
+    '\x81', '\x02',     //    INPUT (Data,Var,Abs)
+    '\xc0',           //  END COLLECTION
+    '\xc0'            //END COLLECTION
+};
+
+extern "C" uint8_t usbFunctionSetup( uint8_t data [8] )
+{
+        usbRequest_t const* rq = (usbRequest_t const*) data;
+
+        if ( (rq->bmRequestType & USBRQ_TYPE_MASK) != USBRQ_TYPE_CLASS )
+                return 0;
+
+        switch ( rq->bRequest )
+        {
+        case USBRQ_HID_GET_REPORT:
+                usbMsgPtr = (usbMsgPtr_t) report_out;
+                return sizeof report_out;
+
+        default:
+                return 0;
+        }
+}
+
+static void calibrateOscillator(void)
+{
+    uchar       step = 128;
+    uchar       trialValue = 0, optimumValue;
+    int         x, optimumDev, targetValue = (unsigned)(1499 * (double)F_CPU / 10.5e6 + 0.5);
+
+    /* do a binary search: */
+    do{
+        OSCCAL = trialValue + step;
+        x = usbMeasureFrameLength();    // proportional to current real frequency
+        if(x < targetValue)             // frequency still too low
+            trialValue += step;
+        step >>= 1;
+    }while(step > 0);
+    /* We have a precision of +/- 1 for optimum OSCCAL here */
+    /* now do a neighborhood search for optimum value */
+    optimumValue = trialValue;
+    optimumDev = x; // this is certainly far away from optimum
+    for(OSCCAL = trialValue - 1; OSCCAL <= trialValue + 1; OSCCAL++){
+        x = usbMeasureFrameLength() - targetValue;
+        if(x < 0)
+            x = -x;
+        if(x < optimumDev){
+            optimumDev = x;
+            optimumValue = OSCCAL;
+        }
+    }
+    OSCCAL = optimumValue;
+}
+
+
+extern "C" void usbEventResetReady(void)
+{
+    cli();  // usbMeasureFrameLength() counts CPU cycles, so disable interrupts.
+    calibrateOscillator();
+    sei();
+}
+
+
 int main(void)
 {
+    wdt_enable(WDTO_1S);
+    usbInit();
+
+    usbDeviceDisconnect();
+    for(int i = 0; i<250; i++) {
+            wdt_reset();
+            _delay_ms(2);
+    }
+    usbDeviceConnect();
+
+    sei();
+
     getPassword();
-    while(1) _delay_ms(1000);
+
+    for ( ;; )
+    {
+        wdt_reset();
+        usbPoll();
+    }
+
     return 0;
 }
