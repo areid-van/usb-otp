@@ -55,7 +55,6 @@ uint8_t state = INIT;
 uint8_t holdCounter = 0;
 uint8_t password[6];
 uint8_t charIndex = 0;
-uint8_t counter = 0;
 
 
 void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
@@ -68,6 +67,7 @@ void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 
     uint8_t o = digest[19] & 0x0f;
     
+    digest[o] &= 0x7f;
     uint32_t p = 0;
     for(uint8_t i=0; i<4; i++){
         uint32_t x = digest[o+i];
@@ -88,18 +88,17 @@ void getPassword(void)
     eeprom_read_block(secret, (uint8_t*)0, 10);
 
     uint8_t time[8];
-    eeprom_read_block(time, (uint8_t*)0 + 16 + counter*16, 8);
+    eeprom_read_block(time, (uint8_t*)0 + 16, 8);
 
     otp(password, secret, 10, time);
-    eeprom_write_block(password, (uint8_t*)0 + 26 + counter*16, 6);
+    eeprom_write_block(password, (uint8_t*)0 + 32, 6);
 
     for(uint8_t i=7; i<8; i--)
     {
         time[i]++;
         if(time[i]) break;
     }
-    counter++;
-    eeprom_write_block(time, (uint8_t*)0 + 16 + counter*16, 8);
+    eeprom_write_block(time, (uint8_t*)0 + 16, 8);
 }
 
 PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = {
@@ -221,6 +220,12 @@ int main(void)
     DDRB |= 1 << PB0;
     DDRB &= ~(1 << PB1);
     PORTB |= 1 << PB1; //pullup input
+
+    /*getPassword();
+    while(1){
+        wdt_reset();
+        _delay_ms(1000);
+    }*/
 
     usbInit();
     usbDeviceDisconnect();
