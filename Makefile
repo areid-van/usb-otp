@@ -6,13 +6,18 @@ avr-otp.hex: avr-otp
 	avr-objcopy -j .text -j .data -O ihex avr-otp avr-otp.hex
 	avr-size avr-otp
 
-eeprom.hex: eeprom.txt
-	xxd -r eeprom.txt > eeprom.bin
+eeprom.hex: eeprom.txt .FORCE
+	printf "0000010: %016x0000000000000000\n" $$((`date -u +%s`/30)) | cat eeprom.txt - | xxd -r > eeprom.bin
 	avr-objcopy -O ihex -I binary eeprom.bin eeprom.hex
+
+.FORCE:
 
 flash: avr-otp.hex eeprom.hex
 	avrdude -c usbtiny -P usb -p t85 -U flash:w:avr-otp.hex:i
 	avrdude -c usbtiny -P usb -p t85 -U eeprom:w:eeprom.hex:i
+
+fuse:
+	avrdude -c usbtiny -P usb -p t85 -U hfuse:w:0xdd:m -U lfuse:w:0xe1:m
 
 clean:
 	rm -f avr-otp avr-otp.hex otp eeprom.hex eeprom.bin *.o
