@@ -56,6 +56,8 @@ uint8_t holdCounter = 0;
 uint8_t password[6];
 uint8_t charIndex = 0;
 
+//uint8_t fastCounter = 0;
+//uint16_t slowCounter = 0;
 
 void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 {
@@ -84,21 +86,32 @@ void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 void getPassword(void)
 {
 
-    uint8_t secret[10];
-    eeprom_read_block(secret, (uint8_t*)0, 10);
+    uint8_t secret[40];
+    eeprom_read_block(secret, (uint8_t*)0, 40);
 
+    //read timestamp
     uint8_t time[8];
-    eeprom_read_block(time, (uint8_t*)0 + 16, 8);
+    eeprom_read_block(time, (uint8_t*)0 + 48, 8);
+    uint32_t ts = 0;
+    for(uint8_t i=0; i<4; i++)
+    {
+        ts |= ((uint32_t)time[i+4]) << (24 - i*8);
+    }
+    //ts = (ts + uint32_t(4.096 * double(slowCounter) + 0.5))/30;
+    ts /= 30;
+    for(uint8_t i=0; i<4; i++)
+    {
+        time[i+4] = (uint8_t)((ts >> (24 - i*8)) & 0x000000ff);
+    }
+    
+    otp(password, secret, 40, time);
 
-    otp(password, secret, 10, time);
-    eeprom_write_block(password, (uint8_t*)0 + 32, 6);
-
-    for(uint8_t i=7; i<8; i--)
+    /*for(uint8_t i=7; i<8; i--)
     {
         time[i]++;
         if(time[i]) break;
-    }
-    eeprom_write_block(time, (uint8_t*)0 + 16, 8);
+    }*/
+    //eeprom_write_block(time, (uint8_t*)0 + 48, 8);
 }
 
 PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH] = {
@@ -167,7 +180,6 @@ extern "C" usbMsgLen_t usbFunctionWrite(uint8_t * data, uchar len)
     if(state == INIT)
     {
         state = WAIT;
-        PORTB |= 1;
     }
 
     if(data[0] == ledState) return 1;
@@ -213,11 +225,25 @@ extern "C" void usbEventResetReady(void)
     sei();
 }
 
+/*void initTimer()
+{
+    OCR1A = 164;
+    OCR1C = 164;
+    TCCR1 = 0x8f; //CTC1 and CK/16384
+    TCNT1 = 0;
+    TIMSK |= 1 << OCIE1A;
+}
+
+ISR(TIMER1_COMPA_vect)
+{
+    fastCounter = (fastCounter + 1)%25;
+    if(!fastCounter) slowCounter++;
+}*/
+
 
 int main(void)
 {
     wdt_enable(WDTO_1S);
-    DDRB |= 1 << PB0;
     DDRB &= ~(1 << PB1);
     PORTB |= 1 << PB1; //pullup input
 
@@ -234,6 +260,7 @@ int main(void)
             _delay_ms(2);
     }
     usbDeviceConnect();
+    //initTimer();
 
     sei();
 
@@ -250,7 +277,7 @@ int main(void)
                 state = SEND;
                 charIndex = 0;
             }
-            holdCounter = 255;
+            holdCounter = 200;
         }
 
         if(holdCounter > 0) holdCounter--;

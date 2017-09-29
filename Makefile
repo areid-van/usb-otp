@@ -7,7 +7,7 @@ avr-otp.hex: avr-otp
 	avr-size avr-otp
 
 eeprom.hex: eeprom.txt .FORCE
-	printf "0000010: %016x0000000000000000\n" $$((`date -u +%s`/30)) | cat eeprom.txt - | xxd -r > eeprom.bin
+	printf "0000030: %016x0000000000000000\n" $$((`date -u +%s`+45)) | cat eeprom.txt - | xxd -r > eeprom.bin
 	avr-objcopy -O ihex -I binary eeprom.bin eeprom.hex
 
 .FORCE:
