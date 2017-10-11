@@ -1,13 +1,14 @@
-avr-otp: sha1.h sha1.cpp hmac_sha1.h hmac_sha1.cpp main.cpp usbdrv/usbdrv.c usbdrv/usbdrvasm.S usbdrv/oddebug.c
-	avr-gcc -I. -Wall -Os -DF_CPU=16500000 -mmcu=attiny85 -c usbdrv/usbdrv.c usbdrv/usbdrvasm.S usbdrv/oddebug.c
-	avr-g++ -I. -Wall -Os -DF_CPU=16500000 -mmcu=attiny85 -o avr-otp usbdrv.o usbdrvasm.o oddebug.o sha1.cpp hmac_sha1.cpp main.cpp
+avr-otp: sha1.h sha1.cpp hmac_sha1.h hmac_sha1.cpp main.cpp usbdrv/usbdrv.c usbdrv/usbdrvasm.S usbdrv/oddebug.c usi_twi_master.c usi_twi_master.h
+	avr-gcc -I. -Wall -Os -DF_CPU=16500000 -mmcu=attiny85 -c usbdrv/usbdrv.c usbdrv/usbdrvasm.S usbdrv/oddebug.c usi_twi_master.c
+	avr-g++ -I. -Wall -Os -DF_CPU=16500000 -mmcu=attiny85 -o avr-otp usbdrv.o usbdrvasm.o oddebug.o usi_twi_master.o sha1.cpp hmac_sha1.cpp main.cpp
 
 avr-otp.hex: avr-otp
 	avr-objcopy -j .text -j .data -O ihex avr-otp avr-otp.hex
 	avr-size avr-otp
 
 eeprom.hex: eeprom.txt .FORCE
-	printf "0000030: %016x0000000000000000\n" $$((`date -u +%s`+45)) | cat eeprom.txt - | xxd -r > eeprom.bin
+	#printf "0000030: %016x0000000000000000\n" $$((`date -u +%s`+45)) | cat eeprom.txt - | xxd -r > eeprom.bin
+	python3 set_clock.py | cat eeprom.txt - | xxd -r > eeprom.bin
 	avr-objcopy -O ihex -I binary eeprom.bin eeprom.hex
 
 .FORCE:
