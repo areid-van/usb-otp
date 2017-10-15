@@ -33,12 +33,13 @@ extern "C" {
 
 
 struct KeyboardReport{
-        KeyboardReport():modifier(0), reserved(0)
+        KeyboardReport(): report_id(1), modifier(0), reserved(0)
         {
             for(uint8_t i=0; i<6; i++) keycode[i] = 0;
         }
         uint8_t& operator[](uint8_t i){return keycode[i];}
 
+        uint8_t report_id;
         uint8_t modifier;
         uint8_t reserved;
         uint8_t keycode[6];
@@ -52,7 +53,8 @@ uint8_t ledState = 0xff;
 #define WAIT 1
 #define SEND 2
 #define RELEASE 3
-uint8_t state = INIT;
+#define SET_TIME 4
+uint8_t state = WAIT;
 uint8_t holdCounter = 0;
 uint8_t password[6];
 uint8_t time[10];
@@ -61,6 +63,8 @@ uint8_t charIndex = 0;
 
 //uint8_t fastCounter = 0;
 //uint16_t slowCounter = 0;
+uint8_t reportId;
+uint8_t writeCount;
 
 void otp(uint8_t password[6], uint8_t secret[], uint8_t length, uint8_t time[8])
 {
@@ -90,16 +94,16 @@ void setTime(void)
 {
     time[0] = (0x68<<TWI_ADR_BITS) | (FALSE<<TWI_READ_BIT);
     time[1] = 0;
-    eeprom_read_block(time+2, (uint8_t*)0+64, 8);
-    do
-    {
+    //eeprom_read_block(time+2, (uint8_t*)0+64, 8);
+    //do
+    //{
         //wdt_reset();
         USI_TWI_Start_Transceiver_With_Data( time, 10 );
-    }
-    while (USI_TWI_Get_State_Info() == USI_TWI_NO_ACK_ON_ADDRESS);
+    //}
+    //while (USI_TWI_Get_State_Info() == USI_TWI_NO_ACK_ON_ADDRESS);
 }
 
-void getTime(void)
+void getClockTime(void)
 {
     for(uint8_t i=0; i<10; i++) time[i] = 0xaa;
     
@@ -109,12 +113,14 @@ void getTime(void)
     USI_TWI_Start_Transceiver_With_Data( time, 2 );
     _delay_ms(10);
     time[0] = (0x68<<TWI_ADR_BITS) | (TRUE<<TWI_READ_BIT);
-    //do
-        USI_TWI_Start_Transceiver_With_Data( time, 8 );
-    //while (USI_TWI_Get_State_Info() == USI_TWI_NO_ACK_ON_ADDRESS);
+    USI_TWI_Start_Transceiver_With_Data( time, 8 );
 
     eeprom_write_block(time, (uint8_t*)0+81, 10);
+}
 
+void getTimestamp(void)
+{
+    getClockTime();
     //year
     uint8_t y = ((time[7]>>4)&0x0f)*10 + (time[7]&0x0f);
     uint32_t u = (y+31)/4;
@@ -182,6 +188,7 @@ PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH]
     '\x05', '\x01',                    // USAGE_PAGE (Generic Desktop)
     '\x09', '\x06',                    // USAGE (Keyboard)
     '\xa1', '\x01',                    // COLLECTION (Application)
+    '\x85', '\x01',                    //   REPORT_ID (1)
     '\x75', '\x01',                    //   REPORT_SIZE (1)
     '\x95', '\x08',                    //   REPORT_COUNT (8)
     '\x05', '\x07',                    //   USAGE_PAGE (Keyboard)(Key Codes)
@@ -210,23 +217,56 @@ PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH]
     '\x19', '\x00',                    //   USAGE_MINIMUM (Reserved (no event indicated))(0)
     '\x29', '\x65',                    //   USAGE_MAXIMUM (Keyboard Application)(101)
     '\x81', '\x00',                    //   INPUT (Data,Ary,Abs)
-    '\xc0'                           // END_COLLECTION
+    '\xc0',                            // END_COLLECTION
+    '\x06', '\x00', '\xff',            // USAGE_PAGE (Generic Desktop)
+    '\x09', '\x01',                    // USAGE (Vendor Usage 1)
+    '\xa1', '\x01',                    // COLLECTION (Application)
+    '\x15', '\x00',                    //   LOGICAL_MINIMUM (0)
+    '\x26', '\xff', '\x00',            //   LOGICAL_MAXIMUM (255)
+    '\x75', '\x08',                    //   REPORT_SIZE (8)
+    '\x85', '\x02',                    //   REPORT_ID (2)
+    '\x95', '\x08',                    //   REPORT_COUNT (8)
+    '\x09', '\x00',                    //   USAGE (Undefined)
+    '\xb2', '\x02', '\x01',            //   FEATURE (Data,Var,Abs,Buf)
+    '\xc0'                             // END_COLLECTION
+
 };
 
 extern "C" usbMsgLen_t usbFunctionSetup(uint8_t data[8])
 {
     usbRequest_t *rq = reinterpret_cast<usbRequest_t*>(data);
+    reportId = rq->wValue.bytes[0];
 
     if((rq->bmRequestType & USBRQ_TYPE_MASK) == USBRQ_TYPE_CLASS)
     {
         switch(rq->bRequest)
         {
             case USBRQ_HID_GET_REPORT:
-                usbMsgPtr = reinterpret_cast<usbMsgPtr_t>(&report);
-                report[0] = 0;
-                return sizeof(report);
+                if(reportId == 2)
+                {
+                    usbMsgPtr = reinterpret_cast<usbMsgPtr_t>(time);
+                    getClockTime();
+                    time[0] = 2;
+                    return 9;
+                }
+                else
+                {
+                    usbMsgPtr = reinterpret_cast<usbMsgPtr_t>(&report);
+                    report[0] = 0;
+                    return sizeof(report);
+                }
             case USBRQ_HID_SET_REPORT: 
-                return (rq->wLength.word == 1) ? USB_NO_MSG : 0;
+                if(reportId == 2)
+                {
+                    writeCount = 0;
+                    return USB_NO_MSG;
+                }
+                else if(reportId == 1)
+                {
+                    writeCount = 0;
+                    return USB_NO_MSG;
+                }
+                return 0;
             case USBRQ_HID_GET_IDLE: 
                 usbMsgPtr = reinterpret_cast<usbMsgPtr_t>(&idleRate);
                 return 1;
@@ -246,9 +286,24 @@ extern "C" usbMsgLen_t usbFunctionWrite(uint8_t * data, uchar len)
         state = WAIT;
     }
 
-    if(data[0] == ledState) return 1;
-    ledState = data[0];
-    return 1;
+    if(reportId == 2)
+    {
+        if(writeCount+len > 9) len = 9 - writeCount;
+        for(uint8_t i=0; i<len; i++) time[i+1+writeCount] = data[i];
+        writeCount += len;
+        if(writeCount == 9)
+        {
+            state = SET_TIME;
+            return 1;
+        }
+        else return 0;
+    }
+    else if(reportId == 1)
+    {
+        return 1;
+    }
+
+    return 0;
 }
 
 static void calibrateOscillator(void)
@@ -328,13 +383,19 @@ int main(void)
         //wdt_reset();
         usbPoll();
 
+        if(state == SET_TIME)
+        {
+            setTime();
+            state = WAIT;
+        }
+
         if(!(PINB & (1<<PB1)))
         {
             if(state == WAIT && holdCounter == 0)
             {
                 //if(timeSet==5) setTime();
                 //if(timeSet<6) timeSet++;
-                getTime();
+                getTimestamp();
                 getPassword();
                 state = SEND;
                 charIndex = 0;
@@ -362,7 +423,9 @@ int main(void)
                     continue;
             }
 
-            usbSetInterrupt(reinterpret_cast<unsigned char*>(&report), sizeof(report));
+            usbSetInterrupt(reinterpret_cast<unsigned char*>(&report), 8);
+            while (!usbInterruptIsReady()) usbPoll();
+            usbSetInterrupt(reinterpret_cast<unsigned char*>(&report) + 8, sizeof(report) - 8);
         }
 
     }
