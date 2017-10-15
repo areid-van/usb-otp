@@ -43,10 +43,3 @@ def setTime():
     device = connect()
     device.ctrl_transfer(0x20, 0x9, 0x2, 0, b)
 
-
-d = getTime()
-d2 = datetime.datetime.utcnow()
-print(d.isoformat())
-print(d2.isoformat())
-print((d-d2).total_seconds())
-#setTime()
