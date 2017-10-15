@@ -47,7 +47,6 @@ struct KeyboardReport{
 
 KeyboardReport report;
 uint8_t idleRate = 0xff;
-uint8_t ledState = 0xff;
 
 #define INIT 0
 #define WAIT 1
@@ -59,10 +58,7 @@ uint8_t holdCounter = 0;
 uint8_t password[6];
 uint8_t time[10];
 uint8_t charIndex = 0;
-//uint8_t timeSet = 0;
 
-//uint8_t fastCounter = 0;
-//uint16_t slowCounter = 0;
 uint8_t reportId;
 uint8_t writeCount;
 
@@ -94,13 +90,8 @@ void setTime(void)
 {
     time[0] = (0x68<<TWI_ADR_BITS) | (FALSE<<TWI_READ_BIT);
     time[1] = 0;
-    //eeprom_read_block(time+2, (uint8_t*)0+64, 8);
-    //do
-    //{
-        //wdt_reset();
-        USI_TWI_Start_Transceiver_With_Data( time, 10 );
-    //}
-    //while (USI_TWI_Get_State_Info() == USI_TWI_NO_ACK_ON_ADDRESS);
+    //wdt_reset();
+    USI_TWI_Start_Transceiver_With_Data( time, 10 );
 }
 
 void getClockTime(void)
@@ -114,8 +105,6 @@ void getClockTime(void)
     _delay_ms(10);
     time[0] = (0x68<<TWI_ADR_BITS) | (TRUE<<TWI_READ_BIT);
     USI_TWI_Start_Transceiver_With_Data( time, 8 );
-
-    eeprom_write_block(time, (uint8_t*)0+81, 10);
 }
 
 void getTimestamp(void)
@@ -169,7 +158,6 @@ void getTimestamp(void)
         time[i] = 0;
         time[i+4] = (uint8_t)((u >> (24 - i*8)) & 0x000000ff);
     }
-    eeprom_write_block(time, (uint8_t*)0 + 96, 8);
 }
 
 void getPassword(void)
@@ -344,32 +332,16 @@ extern "C" void usbEventResetReady(void)
     sei();
 }
 
-/*void initTimer()
-{
-    OCR1A = 164;
-    OCR1C = 164;
-    TCCR1 = 0x8f; //CTC1 and CK/16384
-    TCNT1 = 0;
-    TIMSK |= 1 << OCIE1A;
-}
-
-ISR(TIMER1_COMPA_vect)
-{
-    fastCounter = (fastCounter + 1)%25;
-    if(!fastCounter) slowCounter++;
-}*/
-
-
 int main(void)
 {
-    //wdt_enable(WDTO_1S);
+    wdt_enable(WDTO_1S);
     DDRB &= ~(1 << PB1);
     PORTB |= 1 << PB1; //pullup input
 
     usbInit();
     usbDeviceDisconnect();
     for(int i = 0; i<250; i++) {
-            //wdt_reset();
+            wdt_reset();
             _delay_ms(2);
     }
     usbDeviceConnect();
@@ -380,7 +352,7 @@ int main(void)
 
     for ( ;; )
     {
-        //wdt_reset();
+        wdt_reset();
         usbPoll();
 
         if(state == SET_TIME)
@@ -393,8 +365,6 @@ int main(void)
         {
             if(state == WAIT && holdCounter == 0)
             {
-                //if(timeSet==5) setTime();
-                //if(timeSet<6) timeSet++;
                 getTimestamp();
                 getPassword();
                 state = SEND;
