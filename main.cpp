@@ -55,9 +55,11 @@ uint8_t idleRate = 0xff;
 #define SET_TIME 4
 uint8_t state = WAIT;
 uint8_t holdCounter = 0;
+uint8_t charIndex = 0;
+
 uint8_t password[6];
 uint8_t time[10];
-uint8_t charIndex = 0;
+uint8_t secret[42];
 
 uint8_t reportId;
 uint8_t writeCount;
@@ -162,13 +164,11 @@ void getTimestamp(void)
 
 void getPassword(void)
 {
-    uint8_t secret[40];
-    uint8_t secretLen;
-    eeprom_read_block(&secretLen, (uint8_t*)0, 1);
-    if(secretLen > 40) secretLen = 40;
-    eeprom_read_block(secret, (uint8_t*)0+1, secretLen);
+    eeprom_read_block(&secret[1], (uint8_t*)0, 1);
+    if(secret[1] > 40) secret[1] = 40;
+    eeprom_read_block(&secret[2], (uint8_t*)0+1, secret[1]);
 
-    otp(password, secret, secretLen, time);
+    otp(password, &secret[2], secret[1], time);
 
 }
 
@@ -216,6 +216,10 @@ PROGMEM const char usbHidReportDescriptor [USB_CFG_HID_REPORT_DESCRIPTOR_LENGTH]
     '\x95', '\x08',                    //   REPORT_COUNT (8)
     '\x09', '\x00',                    //   USAGE (Undefined)
     '\xb2', '\x02', '\x01',            //   FEATURE (Data,Var,Abs,Buf)
+    '\x85', '\x03',                    //   REPORT_ID (3)
+    '\x95', '\x29',                    //   REPORT_COUNT (41)
+    '\x09', '\x00',                    //   USAGE (Undefined)
+    '\xb2', '\x02', '\x01',            //   FEATURE (Data,Var,Abs,Buf)
     '\xc0'                             // END_COLLECTION
 
 };
@@ -237,6 +241,10 @@ extern "C" usbMsgLen_t usbFunctionSetup(uint8_t data[8])
                     time[0] = 2;
                     return 9;
                 }
+                else if(reportId == 3)
+                {
+                    return 0;
+                }
                 else
                 {
                     usbMsgPtr = reinterpret_cast<usbMsgPtr_t>(&report);
@@ -244,7 +252,12 @@ extern "C" usbMsgLen_t usbFunctionSetup(uint8_t data[8])
                     return sizeof(report);
                 }
             case USBRQ_HID_SET_REPORT: 
-                if(reportId == 2)
+                if(reportId == 3)
+                {
+                    writeCount = 0;
+                    return USB_NO_MSG;
+                }
+                else if(reportId == 2)
                 {
                     writeCount = 0;
                     return USB_NO_MSG;
@@ -274,7 +287,19 @@ extern "C" usbMsgLen_t usbFunctionWrite(uint8_t * data, uchar len)
         state = WAIT;
     }
 
-    if(reportId == 2)
+    if(reportId == 3)
+    {
+        if(writeCount+len > 42) len = 42 - writeCount;
+        for(uint8_t i=0; i<len; i++) secret[i+writeCount] = data[i];
+        writeCount += len;
+        if(writeCount == 42)
+        {
+            eeprom_write_block(&secret[1], 0, 41);
+            return 1;
+        }
+        else return 0;
+    }
+    else if(reportId == 2)
     {
         if(writeCount+len > 9) len = 9 - writeCount;
         for(uint8_t i=0; i<len; i++) time[i+1+writeCount] = data[i];

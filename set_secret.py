@@ -19,11 +19,10 @@
 #
 
 import usbmfa
-import datetime
+#Secret is in base32 encoding. Spaces are ignored. Upper or lower case are both accepted.
+#Most MFA setup provides the secret as a QR code, but usually also provides the base32 encoded
+#text as an advanced configuration.
+secret = "bjt2 cv2j tbt6 rr27"
+#load the secret onto the device
+usbmfa.setSecret(secret)
 
-usbmfa.setTime();
-print("Device time set to current time")
-d = usbmfa.getTime()
-d2 = datetime.datetime.utcnow()
-print("Current time: ", d.isoformat())
-print("Device time: ", d2.isoformat())

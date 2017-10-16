@@ -1,17 +1,49 @@
+#
+#  An implementation of the RFC 6238 time based OTP protocol on an AtTiny85 microcontroller
+#
+#  Copyright (C) 2017 Adam Reid
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License along
+#  with this program; if not, write to the Free Software Foundation, Inc.,
+#  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
 import usb.core
 import usb.util
 import datetime
+import base64
 
 VENDOR_ID = 0x4242
 PRODUCT_ID = 0xe131
 
 def connect():
+    """Connect to the USB device
+
+    Internal utility function used inside the module
+
+    Returns:
+        A device handle
+    """
     device = usb.core.find(find_all=False, idVendor=VENDOR_ID, idProduct=PRODUCT_ID)
     if device.is_kernel_driver_active(0):
         device.detach_kernel_driver(0)
     return device
 
 def getTime():
+    """Get the current time on the device
+
+    Returns: device time as a datetime object
+    """
     device = connect()
     ba = device.ctrl_transfer(0x80 | 0x20, 0x1, 0x2, 0, 9)
 
@@ -25,6 +57,10 @@ def getTime():
     return datetime.datetime(yr, mnth, day, hr, minu, sec)
 
 def setTime():
+    """Set the time on the device to the current time
+
+    Current time is read from the system clock
+    """
     t = datetime.datetime.utcnow()
 
     d = [2]
@@ -42,4 +78,18 @@ def setTime():
 
     device = connect()
     device.ctrl_transfer(0x20, 0x9, 0x2, 0, b)
+
+def setSecret(secret):
+    """Set the secret on the device
+    
+    Args:
+        secret (str): a base32 encoded string containing the secret.
+           Both upper and lower case are allowed. Spaces will be ignored.
+           The decode secret must be no longer than 40 bytes.
+    """
+    k = list(base64.b32decode(secret.upper().replace(' ','')))
+    if len(k) > 40: raise ValueError
+    b = bytes(bytearray([3, len(k)] + k + ([0] * (40-len(k)))))
+    device = connect()
+    device.ctrl_transfer(0x20, 0x9, 0x3, 0, b)
 
