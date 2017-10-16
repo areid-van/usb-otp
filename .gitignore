@@ -35,3 +35,4 @@ avr-otp
 avr-otp.hex
 eeprom.hex
 eeprom.bin
+__pycache__
